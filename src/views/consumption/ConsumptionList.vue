@@ -62,6 +62,17 @@
         <el-table-column prop="usedQuantity" label="消耗数量" width="120" />
         <el-table-column prop="createdAt" label="消耗时间" width="180" />
       </el-table>
+
+      <el-pagination
+        class="pagination"
+        v-model:current-page="pageNum"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="onPageChange"
+        @size-change="onSizeChange"
+      />
     </el-card>
   </div>
 </template>
@@ -75,16 +86,39 @@ import {
   getAllMaterials,
 } from '@/api'
 import { useStoreFilter } from '@/composables/useStoreFilter'
+import { usePagination } from '@/composables/usePagination'
 import { ElMessage } from 'element-plus'
 
 // 使用组合函数
 const { stores, selectedStoreId, isLocked, loadStores } = useStoreFilter()
 
-const consumptions = ref([])
 const orders = ref([])
 const materials = ref([])
-const loading = ref(false)
 const selectedOrderId = ref(null)
+
+// 分页（复用 usePagination）
+const {
+  pageNum, pageSize, total, loading,
+  data: consumptions,
+  load, onPageChange, onSizeChange, resetAndLoad,
+} = usePagination(
+  (params) => {
+    if (selectedOrderId.value) {
+      // 按订单查询不分页，但为兼容 usePagination 格式，包装一下
+      return getConsumptionsByOrder(selectedOrderId.value).then(res => ({
+        total: res.data?.length || 0,
+        pages: 1,
+        data: res.data || [],
+      }))
+    }
+    return getAllConsumptions({
+      storeId: selectedStoreId.value || undefined,
+      ...params,
+    })
+  },
+  {},
+  10
+)
 
 // 获取原料名称（通过materialId映射）
 const getMaterialName = (materialId) => {
@@ -119,30 +153,15 @@ const loadMaterials = async () => {
 }
 
 // 加载消耗记录数据
-const loadData = async () => {
-  loading.value = true
-  try {
-    let res
-    if (selectedOrderId.value) {
-      // 如果选择了订单，查询该订单的消耗记录
-      res = await getConsumptionsByOrder(selectedOrderId.value)
-    } else {
-      // 否则查询所有记录（可按门店过滤）
-      res = await getAllConsumptions({ storeId: selectedStoreId.value })
-    }
-    consumptions.value = res.data || []
-  } catch (_) {
-    consumptions.value = []
-    ElMessage.error('加载消耗记录失败')
-  } finally {
-    loading.value = false
-  }
+const loadData = () => {
+  resetAndLoad()
 }
 
 // 门店切换事件
 const handleStoreChange = () => {
   selectedOrderId.value = null // 清空已选订单
   loadOrders() // 加载新门店的订单
+  loadData()
 }
 
 // 重置筛选条件
